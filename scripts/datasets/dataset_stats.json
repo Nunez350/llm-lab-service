@@ -1,0 +1,62 @@
+{
+  "openhermes": {
+    "name": "OpenHermes 2.5",
+    "examples": 300000,
+    "total_chars": 439507224,
+    "avg_chars_per_example": 1465.02,
+    "avg_turns_per_example": 2.39,
+    "role_distribution": {
+      "user": 301120,
+      "assistant": 301120,
+      "system": 114917
+    }
+  },
+  "slimorca": {
+    "name": "SlimOrca",
+    "examples": 150000,
+    "total_chars": 231809532,
+    "avg_chars_per_example": 1545.4,
+    "avg_turns_per_example": 2.94,
+    "role_distribution": {
+      "user": 150000,
+      "assistant": 150000,
+      "system": 140301
+    }
+  },
+  "merged": {
+    "name": "Merged Dataset",
+    "examples": 413726,
+    "total_chars": 617164339,
+    "avg_chars_per_example": 1491.72,
+    "avg_turns_per_example": 2.54,
+    "role_distribution": {
+      "user": 414846,
+      "assistant": 414846,
+      "system": 221648
+    }
+  },
+  "train": {
+    "name": "Training Set",
+    "examples": 372354,
+    "total_chars": 555487016,
+    "avg_chars_per_example": 1491.83,
+    "avg_turns_per_example": 2.54,
+    "role_distribution": {
+      "user": 373361,
+      "assistant": 373361,
+      "system": 200695
+    }
+  },
+  "val": {
+    "name": "Validation Set",
+    "examples": 41372,
+    "total_chars": 61677323,
+    "avg_chars_per_example": 1490.8,
+    "avg_turns_per_example": 2.51,
+    "role_distribution": {
+      "user": 41485,
+      "assistant": 41485,
+      "system": 20953
+    }
+  }
+}
