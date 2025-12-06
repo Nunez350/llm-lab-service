@@ -20,7 +20,7 @@ from transformers import (
     Trainer,
     DataCollatorForLanguageModeling
 )
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from datasets import Dataset
 import torch
 
@@ -105,6 +105,9 @@ def main():
         device_map="auto",
         trust_remote_code=True
     )
+
+    # Prepare model for k-bit training
+    model = prepare_model_for_kbit_training(model)
 
     # Configure LoRA
     lora_config = LoraConfig(
@@ -191,7 +194,7 @@ def main():
         optim="adamw_8bit",
         weight_decay=0.01,
         report_to="none",
-        evaluation_strategy="steps" if val_dataset else "no",
+        eval_strategy="steps" if val_dataset else "no",
         eval_steps=500 if val_dataset else None,
     )
 
