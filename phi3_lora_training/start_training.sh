@@ -35,7 +35,7 @@ if [ "$TRANSFORMERS_VERSION" != "4.41.2" ]; then
 fi
 
 # Check if output directory exists, create if not
-OUTPUT_DIR="/home/rnu/mnt/models/unsloth/phi3-finetuned-stable"
+OUTPUT_DIR="/home/rnu/mnt/models/unsloth/phi3-finetuned-stable-bf16"
 if [ ! -d "$OUTPUT_DIR" ]; then
     echo ""
     echo "[2/3] Creating output directory..."
@@ -69,22 +69,26 @@ echo "Validation data: scripts/datasets/merged_val.jsonl"
 echo "Output directory: $OUTPUT_DIR"
 echo ""
 echo "Hyperparameters:"
-echo "  - Max sequence length: 2048"
-echo "  - Batch size: 3 (optimal: 4 causes OOM, 3 works reliably)"
-echo "  - Gradient accumulation: 8 (effective batch size: 32)"
+echo "  - Max sequence length: 1536 (reduced from 2048 for memory)"
+echo "  - Batch size: 1 (memory-optimized for 32GB GPU)"
+echo "  - Gradient accumulation: 64 (effective batch size: 64)"
 echo "  - Epochs: 3"
 echo "  - Learning rate: 2e-4"
 echo "  - LoRA rank: 64"
 echo "  - LoRA alpha: 16"
 echo ""
 echo "Speed Optimizations:"
-echo "  - Optimizer: adamw_8bit (optimized for 8-bit models)"
+echo "  - Precision: Full bf16 (no quantization - faster computation)"
+echo "  - Optimizer: adamw_torch_fused (optimized for full precision)"
+echo "  - Attention: Eager (Phi-3 requirement, Flash Attention not compatible)"
+echo "  - Gradient checkpointing: Enabled (memory optimization)"
 echo "  - Dataloader workers: 2 (parallel data loading)"
 echo "  - Pin memory: enabled (faster GPU transfer)"
 echo "  - Dataset caching: available (use --cache_dataset flag)"
 echo ""
-echo "Expected training time: ~25-30 hours (with optimizations)"
-echo "Checkpoints saved every 2000 steps"
+echo "Expected training time: ~93 hours (3.9 days) with current config"
+echo "  - Alternative: max_seq_length=1024 saves ~39 hours (54h total, 42% faster)"
+echo "Checkpoints saved every 5000 steps"
 echo "Evaluation runs every 5000 steps"
 echo "=================================================="
 echo ""
@@ -103,14 +107,14 @@ fi
 # Start training in background
 echo ""
 echo "Starting training in background..."
-(CUDA_VISIBLE_DEVICES=0 python "$TRAIN_SCRIPT" \
+(PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 python "$TRAIN_SCRIPT" \
   --model_path /home/rnu/mnt/models/phi_models/phi3-medium/ \
   --train_file "$SCRIPT_DIR/../scripts/datasets/merged_train.jsonl" \
   --val_file "$SCRIPT_DIR/../scripts/datasets/merged_val.jsonl" \
   --output_dir "$OUTPUT_DIR" \
-  --max_seq_length 2048 \
-  --batch_size 3 \
-  --gradient_accumulation_steps 8 \
+  --max_seq_length 1536 \
+  --batch_size 1 \
+  --gradient_accumulation_steps 64 \
   --num_epochs 3 \
   --learning_rate 2e-4 \
   --lora_r 64 \

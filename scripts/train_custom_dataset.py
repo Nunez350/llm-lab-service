@@ -20,9 +20,24 @@ from transformers import (
     Trainer,
     DataCollatorForLanguageModeling
 )
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from peft import LoraConfig, get_peft_model
 from datasets import Dataset
 import torch
+
+# Compatibility patch for DynamicCache.get_usable_length issue
+# Some transformers versions use get_seq_length instead
+try:
+    from transformers.cache_utils import DynamicCache
+    if not hasattr(DynamicCache, 'get_usable_length'):
+        # Add compatibility method if missing
+        def get_usable_length(self, seq_length=None):
+            """Compatibility method for older model code"""
+            if hasattr(self, 'get_seq_length'):
+                return self.get_seq_length()
+            return 0
+        DynamicCache.get_usable_length = get_usable_length
+except (ImportError, AttributeError):
+    pass  # If DynamicCache doesn't exist, skip patching
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -35,7 +50,7 @@ def parse_args():
     # Optional
     parser.add_argument('--val_file', type=str, default=None)
     parser.add_argument('--max_seq_length', type=int, default=2048)
-    parser.add_argument('--batch_size', type=int, default=3)  # Optimal: 3 works, 4 causes OOM
+    parser.add_argument('--batch_size', type=int, default=8)  # Default: 8 for full bf16 (may need to reduce if OOM)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=6)
     parser.add_argument('--learning_rate', type=float, default=2e-4)
     parser.add_argument('--num_epochs', type=int, default=3)
@@ -43,6 +58,13 @@ def parse_args():
     parser.add_argument('--lora_alpha', type=int, default=16)
     parser.add_argument('--lora_dropout', type=float, default=0.05)
     parser.add_argument('--gpu_id', type=str, default='0')
+    
+    # Model precision options
+    parser.add_argument('--use_8bit', action='store_true',
+                        help='Use 8-bit quantization (default: False, uses full bf16)')
+    parser.add_argument('--use_flash_attention', type=str, default='auto',
+                        choices=['auto', 'true', 'false'],
+                        help='Use flash attention (default: auto - enabled for full precision, disabled for 8-bit)')
     
     # Speed optimization options
     parser.add_argument('--dataloader_num_workers', type=int, default=2,
@@ -59,9 +81,9 @@ def parse_args():
     
     parser.add_argument('--dataloader_pin_memory', type=str_to_bool, default=True,
                         help='Pin memory for faster GPU transfer (default: True)')
-    parser.add_argument('--optimizer', type=str, default='adamw_8bit',
+    parser.add_argument('--optimizer', type=str, default=None,
                         choices=['adamw_8bit', 'adamw_torch', 'adamw_torch_fused', 'adafactor'],
-                        help='Optimizer type (default: adamw_8bit, faster for 8-bit models)')
+                        help='Optimizer type (default: adamw_torch_fused for full precision, adamw_8bit for 8-bit)')
     parser.add_argument('--cache_dataset', action='store_true',
                         help='Cache tokenized dataset to disk to avoid re-tokenization')
     parser.add_argument('--eval_steps', type=int, default=5000,
@@ -115,42 +137,88 @@ def main():
     print("Loading model and tokenizer...")
     print("="*60)
 
+    # Determine optimizer default based on quantization mode
+    if args.optimizer is None:
+        args.optimizer = 'adamw_8bit' if args.use_8bit else 'adamw_torch_fused'
+        print(f"Using optimizer: {args.optimizer} ({'8-bit quantized' if args.use_8bit else 'full bf16'})")
+
+    # Determine flash attention setting
+    use_flash_attn = False
+    if args.use_flash_attention == 'auto':
+        use_flash_attn = not args.use_8bit  # Auto-enable for full precision, disable for 8-bit
+    elif args.use_flash_attention == 'true':
+        use_flash_attn = True
+    else:
+        use_flash_attn = False
+
+    if use_flash_attn and args.use_8bit:
+        print("Warning: Flash attention is not compatible with 8-bit quantization. Disabling flash attention.")
+        use_flash_attn = False
+
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Load model with 8-bit quantization (faster on RTX 5090, reduces memory usage)
-    # Using load_in_8bit=True for compatibility with current PEFT/bitsandbytes versions
-    # Note: BitsAndBytesConfig causes compatibility issues with PEFT 0.11.1
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_path,
-        load_in_8bit=True,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
-        trust_remote_code=True
-    )
+    # Load model with appropriate precision
+    model_kwargs = {
+        "torch_dtype": torch.bfloat16,
+        "device_map": "auto",
+        "trust_remote_code": True,
+        "low_cpu_mem_usage": True,
+    }
 
-    # Prepare model for k-bit training
-    model = prepare_model_for_kbit_training(model)
+    if args.use_8bit:
+        # 8-bit quantization mode
+        print("Loading model with 8-bit quantization...")
+        model_kwargs["load_in_8bit"] = True
+    else:
+        # Full bf16 precision mode
+        print("Loading model with full bf16 precision...")
+        # Disable Flash Attention for Phi-3 - it has compatibility issues with some GPU/CUDA setups
+        # Phi-3 also doesn't support SDPA, so eager attention is the only reliable option
+        model_kwargs["attn_implementation"] = "eager"
+        print("Using eager attention (Phi-3 architecture requirement - Flash Attention disabled due to compatibility)")
+
+    model = AutoModelForCausalLM.from_pretrained(args.model_path, **model_kwargs)
+
+    # Prepare model for training
+    if args.use_8bit:
+        # Import only when needed to avoid bitsandbytes initialization
+        from peft import prepare_model_for_kbit_training
+        # Prepare model for k-bit training (only needed for quantized models)
+        model = prepare_model_for_kbit_training(model)
+        
+        # Workaround for PEFT 0.11.1 compatibility with bitsandbytes
+        # Fix missing memory_efficient_backward attribute in MatmulLtState
+        try:
+            import bitsandbytes as bnb
+            # Patch all Linear8bitLt modules to have the required state attributes
+            for name, module in model.named_modules():
+                if isinstance(module, bnb.nn.Linear8bitLt):
+                    if hasattr(module, 'state') and module.state is not None:
+                        # Add missing attribute to MatmulLtState if it doesn't exist
+                        if not hasattr(module.state, 'memory_efficient_backward'):
+                            setattr(module.state, 'memory_efficient_backward', False)
+        except (ImportError, AttributeError, TypeError) as e:
+            print(f"Warning: Could not patch bitsandbytes compatibility: {e}")
+            print("This may cause issues with PEFT. Consider updating bitsandbytes or PEFT versions.")
+    else:
+        # For full precision, enable gradient checkpointing to save memory
+        if hasattr(model, 'gradient_checkpointing_enable'):
+            model.gradient_checkpointing_enable()
+            print("✓ Gradient checkpointing enabled (memory optimization)")
 
     # Disable cache to avoid DynamicCache compatibility issues during training and eval
     model.config.use_cache = False
-
-    # Workaround for PEFT 0.11.1 compatibility with bitsandbytes
-    # Fix missing memory_efficient_backward attribute in MatmulLtState
-    try:
-        import bitsandbytes as bnb
-        # Patch all Linear8bitLt modules to have the required state attributes
-        for name, module in model.named_modules():
-            if isinstance(module, bnb.nn.Linear8bitLt):
-                if hasattr(module, 'state') and module.state is not None:
-                    # Add missing attribute to MatmulLtState if it doesn't exist
-                    if not hasattr(module.state, 'memory_efficient_backward'):
-                        setattr(module.state, 'memory_efficient_backward', False)
-    except (ImportError, AttributeError, TypeError) as e:
-        print(f"Warning: Could not patch bitsandbytes compatibility: {e}")
-        print("This may cause issues with PEFT. Consider updating bitsandbytes or PEFT versions.")
+    
+    # Additional fix: Ensure past_key_values is not used during training
+    # This prevents DynamicCache.get_usable_length errors
+    if hasattr(model.config, 'use_cache'):
+        model.config.use_cache = False
+    # Also disable in model's generation config if it exists
+    if hasattr(model, 'generation_config') and hasattr(model.generation_config, 'use_cache'):
+        model.generation_config.use_cache = False
 
     # Configure LoRA
     lora_config = LoraConfig(
@@ -177,6 +245,7 @@ def main():
             print("2. Try downgrading bitsandbytes: pip install bitsandbytes==0.41.3")
             print("3. Or try upgrading PEFT: pip install peft==0.12.0")
             print("4. If using PEFT 0.12.0+, you may need to upgrade transformers to 4.45.0+")
+            print("5. Consider using full bf16 (--use_8bit=False) to avoid quantization issues")
             print("\nCurrent versions in requirements.txt:")
             print("  - peft==0.11.1")
             print("  - bitsandbytes>=0.40.0")
@@ -282,7 +351,8 @@ def main():
         greater_is_better=False if val_dataset else None,
 
         # torch_compile is not compatible with quantized models + PEFT
-        # torch_compile=False,
+        # Can be enabled for full precision models, but may cause issues
+        torch_compile=False if args.use_8bit else False,  # Keep disabled for now
         report_to="none",
     )
 
