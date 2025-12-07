@@ -112,12 +112,8 @@ def main():
     # Disable cache to avoid DynamicCache compatibility issues during training and eval
     model.config.use_cache = False
 
-    # Apply torch.compile for 10-20% speedup (requires PyTorch 2.0+)
-    try:
-        model = torch.compile(model)
-        print("✓ Torch compile enabled")
-    except Exception as e:
-        print(f"⚠ Torch compile not available: {e}")
+    # NOTE: torch.compile() is incompatible with 4-bit quantized training
+    # Cannot use torch.compile with load_in_4bit=True
 
     # Configure LoRA
     lora_config = LoraConfig(
