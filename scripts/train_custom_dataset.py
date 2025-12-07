@@ -109,6 +109,9 @@ def main():
     # Prepare model for k-bit training
     model = prepare_model_for_kbit_training(model)
 
+    # Disable cache to avoid DynamicCache compatibility issues during training and eval
+    model.config.use_cache = False
+
     # Configure LoRA
     lora_config = LoraConfig(
         r=args.lora_r,

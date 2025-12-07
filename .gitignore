@@ -1,5 +1,16 @@
 scripts/datasets/*.jsonl
+scripts/datasets/dataset_stats.json
 scripts/outputs/
 logs/
 *.log
 target/
+/.mvn/
+/.mvn/
+
+# Virtual environments
+labvenv/
+venv/
+env/
+*.pyc
+__pycache__/
+.Python

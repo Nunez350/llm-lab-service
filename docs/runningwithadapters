@@ -1,0 +1,96 @@
+● Now run it:
+
+  bash /tmp/start_phi3_with_lora.sh
+
+  How to Use the Adapters
+
+  After startup, you'll have TWO models available:
+
+  1. Base model (no adapter):
+  curl http://localhost:9022/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "phi3-medium",
+      "messages": [{"role": "user", "content": "Hello!"}]
+    }'
+
+  2. With your fine-tuned adapter:
+  curl http://localhost:9022/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "phi3-chat",
+      "messages": [{"role": "user", "content": "Hello!"}]
+    }'
+
+  Option 2: Dynamic Loading (Hot-Swap Multiple Adapters)
+
+  If you want to load adapters dynamically after startup:
+
+  # Start without pre-loaded adapters
+  docker run --gpus "device=0" -d \
+    --network host \
+    --name phi3-medium-vllm \
+    --shm-size 32g \
+    -v /home/rnu/mnt/models/phi_models/phi3-medium:/model \
+    -v /mnt/models/unsloth/phi3-finetuned:/adapters/phi3-finetuned \
+    vllm/vllm-openai:latest \
+      --model /model \
+      --served-model-name phi3-medium \
+      --enable-lora \
+      --lora-modules phi3-chat=/adapters/phi3-finetuned \
+      --max-lora-rank 64 \
+      --dtype bfloat16 \
+      --max-model-len 2048 \
+      --gpu-memory-utilization 0.90 \
+      --enforce-eager \
+      --port 9022
+
+  # Then register adapters via API:
+  curl -X POST http://localhost:9022/v1/load_lora_adapter \
+    -H "Content-Type: application/json" \
+    -d '{
+      "lora_name": "phi3-chat",
+      "lora_path": "/adapters/phi3-finetuned"
+    }'
+
+  # Add more adapters as you train them:
+  curl -X POST http://localhost:9022/v1/load_lora_adapter \
+    -H "Content-Type: application/json" \
+    -d '{
+      "lora_name": "phi3-medical",
+      "lora_path": "/adapters/phi3-medical-adapter"
+    }'
+
+  Verify Everything Works
+
+  # 1. Check available models
+  curl http://localhost:9022/v1/models
+
+  # 2. Test base model
+  curl http://localhost:9022/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "phi3-medium",
+      "messages": [{"role": "user", "content": "What is 2+2?"}],
+      "max_tokens": 100
+    }'
+
+  # 3. Test fine-tuned adapter
+  curl http://localhost:9022/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+      "model": "phi3-chat",
+      "messages": [{"role": "user", "content": "What is 2+2?"}],
+      "max_tokens": 100
+    }'
+
+  Key Points
+
+  - Base model name: phi3-medium (no adapter)
+  - Adapter model name: phi3-chat (uses your trained adapter)
+  - LoRA rank: 64 (matches your training config)
+  - Memory: Reduced GPU utilization to 0.85 to leave room for adapter weights
+  - Hot-swapping: Switch between base and adapter per-request, no reload needed
+
+  Ready to start? Just run:
+  bash /tmp/start_phi3_with_lora.sh
