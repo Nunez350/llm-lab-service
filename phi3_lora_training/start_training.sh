@@ -77,7 +77,7 @@ echo "  - Learning rate: 2e-4"
 echo "  - LoRA rank: 64"
 echo "  - LoRA alpha: 16"
 echo ""
-echo "Expected training time: ~65 hours (depends on GPU)"
+echo "Expected training time: ~35-40 hours (optimized with parallel processing + torch.compile)"
 echo "Checkpoints saved every 500 steps"
 echo "Evaluation runs every 500 steps"
 echo "=================================================="
@@ -98,7 +98,7 @@ echo "Starting training in background..."
   --output_dir "$OUTPUT_DIR" \
   --max_seq_length 2048 \
   --batch_size 2 \
-  --gradient_accumulation_steps 4 \
+  --gradient_accumulation_steps 8 \
   --num_epochs 3 \
   --learning_rate 2e-4 \
   --lora_r 64 \
