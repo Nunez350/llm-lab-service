@@ -439,4 +439,4 @@ MIT
 
 ## Contributors
 
-Built with Claude Code
+Built with AI assistance
