@@ -57,7 +57,7 @@ pip install -r requirements.txt
 
 ### Step 3: Verify train_custom_dataset.py Has the Fix
 
-The file `scripts/train_custom_dataset.py` must include this line after model preparation (around line 113):
+The file `../scripts/train_custom_dataset.py` (consolidated script) must include this line after model preparation (around line 113):
 
 ```python
 # Prepare model for k-bit training
@@ -86,12 +86,11 @@ Format should be JSONL with messages structure:
 ```bash
 cd /home/rnu/mnt/models/llm-lab-service
 source labvenv/bin/activate
-cd scripts
 
-CUDA_VISIBLE_DEVICES=0 python train_custom_dataset.py \
+CUDA_VISIBLE_DEVICES=0 python ../scripts/train_custom_dataset.py \
   --model_path /home/rnu/mnt/models/phi_models/phi3-medium/ \
-  --train_file ./datasets/merged_train.jsonl \
-  --val_file ./datasets/merged_val.jsonl \
+  --train_file ../scripts/datasets/merged_train.jsonl \
+  --val_file ../scripts/datasets/merged_val.jsonl \
   --output_dir /home/rnu/mnt/models/unsloth/phi3-finetuned-stable \
   --max_seq_length 2048 \
   --batch_size 2 \
@@ -185,7 +184,7 @@ AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'
 **Solution:**
 1. Verify you're using `labvenv` (not unsloth venv)
 2. Check transformers version: `pip show transformers` (must be 4.41.2)
-3. Ensure `model.config.use_cache = False` is in train_custom_dataset.py
+3. Ensure `model.config.use_cache = False` is in `../scripts/train_custom_dataset.py` (consolidated script)
 
 ### Issue: PEFT import error
 
@@ -206,7 +205,7 @@ pip install peft==0.11.1
 **Solution:**
 Reduce batch size or sequence length:
 ```bash
-python train_custom_dataset.py \
+python ../scripts/train_custom_dataset.py \
   --batch_size 1 \
   --max_seq_length 1024 \
   ...
@@ -232,13 +231,14 @@ pkill -9 -f train_custom_dataset.py
 
 ```
 llm-lab-service/
-├── README_TRAINING_SETUP.md          # This file
-├── requirements.txt                   # Python dependencies
-├── setup_training_env.sh             # Automated environment setup
-├── start_training.sh                 # Start training script
+├── phi3_lora_training/
+│   ├── README_TRAINING_SETUP.md      # This file
+│   ├── requirements.txt              # Python dependencies
+│   ├── setup_training_env.sh         # Automated environment setup
+│   └── start_training.sh             # Start training script
 ├── labvenv/                          # Virtual environment (created by setup)
 └── scripts/
-    ├── train_custom_dataset.py       # Main training script (with fix)
+    ├── train_custom_dataset.py       # Consolidated training script (with fix)
     ├── datasets/
     │   ├── merged_train.jsonl        # Training data
     │   └── merged_val.jsonl          # Validation data

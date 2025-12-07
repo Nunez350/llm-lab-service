@@ -35,8 +35,10 @@ phi3_lora_training/
 ├── prepare_dataset.sh                 # Dataset preparation launcher
 │
 ├── scripts/
-│   ├── prepare_dataset.py             # Dataset merging and cleaning
-│   └── train_custom_dataset.py        # LoRA training script (with fixes)
+│   └── prepare_dataset.py             # Dataset merging and cleaning
+│
+└── ../scripts/
+    └── train_custom_dataset.py        # LoRA training script (consolidated, with fixes)
 │
 └── docs/
     ├── README_TRAINING_SETUP.md       # Complete training guide
@@ -66,7 +68,7 @@ phi3_lora_training/
 
 ### Training
 - **start_training.sh**: Training launcher with proper configuration
-- **scripts/train_custom_dataset.py**: LoRA training implementation
+- **../scripts/train_custom_dataset.py**: LoRA training implementation (consolidated script)
   - **Critical fix**: `model.config.use_cache = False` (prevents step 500 crash)
   - QLoRA with 4-bit quantization
   - LoRA rank 64, alpha 16

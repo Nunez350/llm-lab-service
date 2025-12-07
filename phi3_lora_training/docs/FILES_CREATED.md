@@ -29,7 +29,7 @@ All files needed to reproduce the successful Phi-3 Medium training setup.
 
 | File | Status |
 |------|--------|
-| `scripts/train_custom_dataset.py` | ✅ Already modified with `model.config.use_cache = False` |
+| `../scripts/train_custom_dataset.py` | ✅ Consolidated script, modified with `model.config.use_cache = False` |
 
 ---
 
@@ -121,8 +121,8 @@ peft==0.11.1          # Critical: NOT 0.18.x
 ├── labvenv/                       ← Created by setup_training_env.sh
 │   └── [virtual environment]
 │
-└── scripts/
-    ├── train_custom_dataset.py    ← Modified with use_cache=False
+└── ../scripts/
+    ├── train_custom_dataset.py    ← Consolidated script, modified with use_cache=False
     ├── datasets/
     │   ├── merged_train.jsonl     ← Your training data
     │   └── merged_val.jsonl       ← Your validation data
@@ -146,7 +146,7 @@ Before starting training, verify:
 - [x] `setup_training_env.sh` exists and is executable
 - [x] `start_training.sh` exists and is executable
 - [x] `requirements.txt` exists
-- [x] `scripts/train_custom_dataset.py` has `model.config.use_cache = False`
+- [x] `../scripts/train_custom_dataset.py` (consolidated script) has `model.config.use_cache = False`
 - [ ] `labvenv/` exists (created by setup_training_env.sh)
 - [ ] Phi-3 model downloaded to `/home/rnu/mnt/models/phi_models/phi3-medium/`
 - [ ] Dataset files in `scripts/datasets/`

@@ -70,40 +70,53 @@ echo "Output directory: $OUTPUT_DIR"
 echo ""
 echo "Hyperparameters:"
 echo "  - Max sequence length: 2048"
-echo "  - Batch size: 2"
-echo "  - Gradient accumulation: 4 (effective batch size: 8)"
+echo "  - Batch size: 3 (optimal: 4 causes OOM, 3 works reliably)"
+echo "  - Gradient accumulation: 8 (effective batch size: 32)"
 echo "  - Epochs: 3"
 echo "  - Learning rate: 2e-4"
 echo "  - LoRA rank: 64"
 echo "  - LoRA alpha: 16"
 echo ""
-echo "Expected training time: ~35-40 hours (optimized with parallel processing)"
-echo "Checkpoints saved every 500 steps"
-echo "Evaluation runs every 500 steps"
+echo "Speed Optimizations:"
+echo "  - Optimizer: adamw_8bit (optimized for 8-bit models)"
+echo "  - Dataloader workers: 2 (parallel data loading)"
+echo "  - Pin memory: enabled (faster GPU transfer)"
+echo "  - Dataset caching: available (use --cache_dataset flag)"
+echo ""
+echo "Expected training time: ~25-30 hours (with optimizations)"
+echo "Checkpoints saved every 2000 steps"
+echo "Evaluation runs every 5000 steps"
 echo "=================================================="
 echo ""
 echo "Press Enter to start training, or Ctrl+C to cancel..."
 read -r
 
-# Change to scripts directory within this package
-cd scripts
+# Use consolidated script from main scripts directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TRAIN_SCRIPT="$SCRIPT_DIR/../scripts/train_custom_dataset.py"
+
+if [ ! -f "$TRAIN_SCRIPT" ]; then
+    echo "✗ ERROR: Training script not found: $TRAIN_SCRIPT"
+    exit 1
+fi
 
 # Start training in background
 echo ""
 echo "Starting training in background..."
-(CUDA_VISIBLE_DEVICES=0 python train_custom_dataset.py \
+(CUDA_VISIBLE_DEVICES=0 python "$TRAIN_SCRIPT" \
   --model_path /home/rnu/mnt/models/phi_models/phi3-medium/ \
-  --train_file ../../scripts/datasets/merged_train.jsonl \
-  --val_file ../../scripts/datasets/merged_val.jsonl \
+  --train_file "$SCRIPT_DIR/../scripts/datasets/merged_train.jsonl" \
+  --val_file "$SCRIPT_DIR/../scripts/datasets/merged_val.jsonl" \
   --output_dir "$OUTPUT_DIR" \
   --max_seq_length 2048 \
-  --batch_size 2 \
+  --batch_size 3 \
   --gradient_accumulation_steps 8 \
   --num_epochs 3 \
   --learning_rate 2e-4 \
   --lora_r 64 \
   --lora_alpha 16 \
   --gpu_id 0 \
+  --eval_steps 5000 \
   > "$OUTPUT_DIR/training.log" 2>&1 &)
 
 # Get PID of training process

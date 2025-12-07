@@ -35,14 +35,37 @@ def parse_args():
     # Optional
     parser.add_argument('--val_file', type=str, default=None)
     parser.add_argument('--max_seq_length', type=int, default=2048)
-    parser.add_argument('--batch_size', type=int, default=2)
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=8)
+    parser.add_argument('--batch_size', type=int, default=3)  # Optimal: 3 works, 4 causes OOM
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=6)
     parser.add_argument('--learning_rate', type=float, default=2e-4)
     parser.add_argument('--num_epochs', type=int, default=3)
     parser.add_argument('--lora_r', type=int, default=64)
     parser.add_argument('--lora_alpha', type=int, default=16)
-    parser.add_argument('--lora_dropout', type=float, default=0.0)
+    parser.add_argument('--lora_dropout', type=float, default=0.05)
     parser.add_argument('--gpu_id', type=str, default='0')
+    
+    # Speed optimization options
+    parser.add_argument('--dataloader_num_workers', type=int, default=2,
+                        help='Number of dataloader workers (default: 2, 0=disabled)')
+    def str_to_bool(v):
+        if isinstance(v, bool):
+            return v
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Boolean value expected.')
+    
+    parser.add_argument('--dataloader_pin_memory', type=str_to_bool, default=True,
+                        help='Pin memory for faster GPU transfer (default: True)')
+    parser.add_argument('--optimizer', type=str, default='adamw_8bit',
+                        choices=['adamw_8bit', 'adamw_torch', 'adamw_torch_fused', 'adafactor'],
+                        help='Optimizer type (default: adamw_8bit, faster for 8-bit models)')
+    parser.add_argument('--cache_dataset', action='store_true',
+                        help='Cache tokenized dataset to disk to avoid re-tokenization')
+    parser.add_argument('--eval_steps', type=int, default=5000,
+                        help='Number of steps between evaluations (default: 5000)')
 
     return parser.parse_args()
 
@@ -97,10 +120,12 @@ def main():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Load model with 4-bit quantization
+    # Load model with 8-bit quantization (faster on RTX 5090, reduces memory usage)
+    # Using load_in_8bit=True for compatibility with current PEFT/bitsandbytes versions
+    # Note: BitsAndBytesConfig causes compatibility issues with PEFT 0.11.1
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,
-        load_in_4bit=True,
+        load_in_8bit=True,
         torch_dtype=torch.bfloat16,
         device_map="auto",
         trust_remote_code=True
@@ -112,8 +137,20 @@ def main():
     # Disable cache to avoid DynamicCache compatibility issues during training and eval
     model.config.use_cache = False
 
-    # NOTE: torch.compile() is incompatible with 4-bit quantized training
-    # Cannot use torch.compile with load_in_4bit=True
+    # Workaround for PEFT 0.11.1 compatibility with bitsandbytes
+    # Fix missing memory_efficient_backward attribute in MatmulLtState
+    try:
+        import bitsandbytes as bnb
+        # Patch all Linear8bitLt modules to have the required state attributes
+        for name, module in model.named_modules():
+            if isinstance(module, bnb.nn.Linear8bitLt):
+                if hasattr(module, 'state') and module.state is not None:
+                    # Add missing attribute to MatmulLtState if it doesn't exist
+                    if not hasattr(module.state, 'memory_efficient_backward'):
+                        setattr(module.state, 'memory_efficient_backward', False)
+    except (ImportError, AttributeError, TypeError) as e:
+        print(f"Warning: Could not patch bitsandbytes compatibility: {e}")
+        print("This may cause issues with PEFT. Consider updating bitsandbytes or PEFT versions.")
 
     # Configure LoRA
     lora_config = LoraConfig(
@@ -126,7 +163,25 @@ def main():
         task_type="CAUSAL_LM"
     )
 
-    model = get_peft_model(model, lora_config)
+    # Apply LoRA with error handling for compatibility issues
+    try:
+        model = get_peft_model(model, lora_config)
+    except AttributeError as e:
+        if 'memory_efficient_backward' in str(e):
+            print("\n" + "="*60)
+            print("ERROR: PEFT/bitsandbytes compatibility issue detected")
+            print("="*60)
+            print("The error suggests a version mismatch between PEFT and bitsandbytes.")
+            print("\nTroubleshooting steps:")
+            print("1. Check your bitsandbytes version: pip show bitsandbytes")
+            print("2. Try downgrading bitsandbytes: pip install bitsandbytes==0.41.3")
+            print("3. Or try upgrading PEFT: pip install peft==0.12.0")
+            print("4. If using PEFT 0.12.0+, you may need to upgrade transformers to 4.45.0+")
+            print("\nCurrent versions in requirements.txt:")
+            print("  - peft==0.11.1")
+            print("  - bitsandbytes>=0.40.0")
+            print("="*60)
+        raise
     model.print_trainable_parameters()
 
     print("\n" + "="*60)
@@ -160,7 +215,7 @@ def main():
             desc="Formatting val"
         )
 
-    # Tokenize
+    # Tokenize (with optional caching)
     print("Tokenizing...")
     def tokenize_function(examples):
         return tokenizer(
@@ -170,12 +225,20 @@ def main():
             padding=False
         )
 
+    # Cache tokenized datasets if requested (saves time on subsequent runs)
+    cache_dir = None
+    if args.cache_dataset:
+        cache_dir = os.path.join(args.output_dir, ".dataset_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        print(f"✓ Dataset caching enabled: {cache_dir}")
+
     train_dataset = train_dataset.map(
         tokenize_function,
         batched=True,
         num_proc=4,  # Parallel processing for 3-4x speedup
         remove_columns=["messages", "text"],
-        desc="Tokenizing train"
+        desc="Tokenizing train",
+        cache_file_name=os.path.join(cache_dir, "train_tokenized.arrow") if cache_dir else None
     )
 
     if val_dataset:
@@ -184,35 +247,50 @@ def main():
             batched=True,
             num_proc=4,  # Parallel processing for 3-4x speedup
             remove_columns=["messages", "text"],
-            desc="Tokenizing val"
+            desc="Tokenizing val",
+            cache_file_name=os.path.join(cache_dir, "val_tokenized.arrow") if cache_dir else None
         )
 
-    # Training arguments
+    # Training arguments (optimized for RTX 5090)
     training_args = TrainingArguments(
         output_dir=args.output_dir,
         num_train_epochs=args.num_epochs,
         per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=4,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.learning_rate,
-        lr_scheduler_type="linear",
+        lr_scheduler_type="cosine",
         warmup_steps=100,
-        logging_steps=10,
-        save_steps=500,
-        save_total_limit=3,
-        fp16=False,
-        bf16=True,
-        optim="adamw_8bit",
         weight_decay=0.01,
-        report_to="none",
-        dataloader_num_workers=0,  # Avoid worker process overhead (30-40% faster)
+        bf16=True,
+        optim=args.optimizer,  # Use optimized optimizer (adamw_8bit is faster for quantized models)
+        logging_steps=10,
+        save_steps=args.eval_steps,  # Must be a multiple of eval_steps for load_best_model_at_end
+        save_total_limit=3,
+
+        # Dataloader optimizations (enable for faster data loading)
+        dataloader_num_workers=args.dataloader_num_workers,
+        dataloader_pin_memory=args.dataloader_pin_memory,
+        dataloader_prefetch_factor=2,  # Prefetch batches for faster loading
+
+        # Validation settings
         eval_strategy="steps" if val_dataset else "no",
-        eval_steps=1000 if val_dataset else None,  # Reduced from 500 (saves ~1.75 hours)
+        eval_steps=args.eval_steps if val_dataset else None,
+        eval_accumulation_steps=8 if val_dataset else None,
+        load_best_model_at_end=True if val_dataset else False,
+        metric_for_best_model="eval_loss" if val_dataset else None,
+        greater_is_better=False if val_dataset else None,
+
+        # torch_compile is not compatible with quantized models + PEFT
+        # torch_compile=False,
+        report_to="none",
     )
 
-    # Data collator
+    # Data collator (optimized with padding to multiple of 8 for better GPU utilization)
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer,
-        mlm=False
+        mlm=False,
+        pad_to_multiple_of=8  # Optimize for GPU tensor operations
     )
 
     # Trainer
