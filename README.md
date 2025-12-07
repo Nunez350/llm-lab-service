@@ -436,7 +436,3 @@ Each script accepts different parameters. The service filters parameters accordi
 ## License
 
 MIT
-
-## Contributors
-
-Built with AI assistance
