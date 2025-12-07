@@ -9,31 +9,32 @@ echo "Phi-3 Training Environment Setup"
 echo "=================================================="
 echo ""
 
-# Change to project directory
-cd /home/rnu/mnt/models/llm-lab-service
+# Change to phi3_lora_training directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # Step 1: Create virtual environment
-echo "[1/5] Creating virtual environment 'labvenv'..."
-if [ -d "labvenv" ]; then
+echo "[1/5] Creating virtual environment 'labvenv' in parent directory..."
+if [ -d "../labvenv" ]; then
     echo "  WARNING: labvenv already exists. Remove it? (y/n)"
     read -r response
     if [ "$response" = "y" ]; then
-        rm -rf labvenv
-        python3 -m venv labvenv
+        rm -rf ../labvenv
+        python3 -m venv ../labvenv
         echo "  ✓ Created fresh labvenv"
     else
         echo "  ✓ Using existing labvenv"
     fi
 else
-    python3 -m venv labvenv
-    echo "  ✓ Created labvenv"
+    python3 -m venv ../labvenv
+    echo "  ✓ Created labvenv in parent directory"
 fi
 
 # Step 2: Activate virtual environment
 echo ""
 echo "[2/5] Activating virtual environment..."
-source labvenv/bin/activate
-echo "  ✓ Activated labvenv"
+source ../labvenv/bin/activate
+echo "  ✓ Activated labvenv (parent directory)"
 
 # Step 3: Upgrade pip
 echo ""
@@ -90,5 +91,5 @@ echo "  1. Verify train_custom_dataset.py has 'model.config.use_cache = False'"
 echo "  2. Run: ./start_training.sh"
 echo ""
 echo "To activate this environment manually:"
-echo "  source labvenv/bin/activate"
+echo "  source ../labvenv/bin/activate"
 echo ""

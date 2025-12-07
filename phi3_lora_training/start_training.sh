@@ -9,19 +9,20 @@ echo "Starting Phi-3 Medium Training"
 echo "=================================================="
 echo ""
 
-# Change to project directory
-cd /home/rnu/mnt/models/llm-lab-service
+# Change to phi3_lora_training directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-# Check if labvenv exists
-if [ ! -d "labvenv" ]; then
-    echo "Error: labvenv not found!"
+# Check if labvenv exists in parent directory
+if [ ! -d "../labvenv" ]; then
+    echo "Error: labvenv not found in parent directory!"
     echo "Run ./setup_training_env.sh first"
     exit 1
 fi
 
 # Activate virtual environment
 echo "[1/3] Activating labvenv..."
-source labvenv/bin/activate
+source ../labvenv/bin/activate
 echo "  ✓ Virtual environment activated"
 
 # Verify critical versions
@@ -84,7 +85,7 @@ echo ""
 echo "Press Enter to start training, or Ctrl+C to cancel..."
 read -r
 
-# Change to scripts directory
+# Change to scripts directory within this package
 cd scripts
 
 # Start training in background
@@ -92,8 +93,8 @@ echo ""
 echo "Starting training in background..."
 (CUDA_VISIBLE_DEVICES=0 python train_custom_dataset.py \
   --model_path /home/rnu/mnt/models/phi_models/phi3-medium/ \
-  --train_file ./datasets/merged_train.jsonl \
-  --val_file ./datasets/merged_val.jsonl \
+  --train_file ../../scripts/datasets/merged_train.jsonl \
+  --val_file ../../scripts/datasets/merged_val.jsonl \
   --output_dir "$OUTPUT_DIR" \
   --max_seq_length 2048 \
   --batch_size 2 \

@@ -9,12 +9,13 @@ echo "Dataset Preparation for Phi-3 Training"
 echo "=================================================="
 echo ""
 
-# Change to project directory
-cd /home/rnu/mnt/models/llm-lab-service
+# Change to phi3_lora_training directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # Check if labvenv exists
-if [ ! -d "labvenv" ]; then
-    echo "Warning: labvenv not found!"
+if [ ! -d "../labvenv" ]; then
+    echo "Warning: labvenv not found in parent directory!"
     echo "Run ./setup_training_env.sh first to create virtual environment."
     echo ""
     echo "Continue anyway with system Python? (y/n)"
@@ -25,7 +26,7 @@ if [ ! -d "labvenv" ]; then
     fi
 else
     echo "[1/3] Activating labvenv..."
-    source labvenv/bin/activate
+    source ../labvenv/bin/activate
     echo "  ✓ Virtual environment activated"
 fi
 
@@ -75,7 +76,7 @@ echo ""
 echo "Press Enter to start, or Ctrl+C to cancel..."
 read -r
 
-# Change to scripts directory
+# Change to scripts directory within this package
 cd scripts
 
 # Run dataset preparation
