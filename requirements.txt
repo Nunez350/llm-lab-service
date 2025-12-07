@@ -1,0 +1,36 @@
+# Core ML/LLM libraries with stable versions
+transformers==4.41.2
+accelerate==0.31.0
+peft==0.11.1
+
+# PyTorch ecosystem
+torch>=2.0.0
+torchvision>=0.15.0
+
+# HuggingFace datasets and utilities
+datasets>=2.14.0
+huggingface-hub>=0.16.0
+
+# Quantization and optimization
+bitsandbytes>=0.40.0
+
+# Tokenization
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+
+# Scientific computing
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Utilities
+tqdm>=4.65.0
+requests>=2.31.0
+pyyaml>=6.0
+
+# API clients for LLM-as-judge evaluation
+openai>=1.0.0
+anthropic>=0.25.0
+
+# Development tools
+pytest>=7.4.0
+black>=23.7.0
