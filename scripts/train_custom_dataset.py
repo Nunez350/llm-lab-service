@@ -18,7 +18,8 @@ from transformers import (
     AutoTokenizer,
     TrainingArguments,
     Trainer,
-    DataCollatorForLanguageModeling
+    DataCollatorForLanguageModeling,
+    TrainerCallback
 )
 from peft import LoraConfig, get_peft_model
 from datasets import Dataset
@@ -125,6 +126,36 @@ def format_messages(examples, tokenizer):
                     text += f"System: {content}\n"
         texts.append(text)
     return {"text": texts}
+
+
+class GradientNormCallback(TrainerCallback):
+    """Callback to log gradient norms and sequence lengths"""
+    
+    def __init__(self, max_seq_length=None):
+        self.max_seq_length = max_seq_length
+    
+    def on_log(self, args, state, control, logs=None, model=None, **kwargs):
+        """Called when logging happens - add gradient norm and sequence length"""
+        if logs is None:
+            return
+        
+        # Calculate gradient norm (only on logging steps to minimize overhead)
+        if model is not None:
+            total_norm = 0.0
+            param_count = 0
+            for p in model.parameters():
+                if p.grad is not None:
+                    param_norm = p.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+                    param_count += 1
+            if param_count > 0:
+                total_norm = total_norm ** (1. / 2)
+                logs['grad_norm'] = total_norm
+        
+        # Add sequence length (max_seq_length from training config)
+        # Note: This is the configured max, actual batch lengths may vary
+        if self.max_seq_length is not None:
+            logs['seq_length'] = self.max_seq_length
 
 
 def main():
@@ -363,13 +394,14 @@ def main():
         pad_to_multiple_of=8  # Optimize for GPU tensor operations
     )
 
-    # Trainer
+    # Trainer with callback for gradient norms and sequence lengths
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         data_collator=data_collator,
+        callbacks=[GradientNormCallback(max_seq_length=args.max_seq_length)],
     )
 
     print("\n" + "="*60)
