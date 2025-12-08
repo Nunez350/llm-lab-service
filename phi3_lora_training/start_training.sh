@@ -35,7 +35,7 @@ if [ "$TRANSFORMERS_VERSION" != "4.41.2" ]; then
 fi
 
 # Check if output directory exists, create if not
-OUTPUT_DIR="/home/rnu/mnt/models/unsloth/phi3-finetuned-stable-bf16"
+OUTPUT_DIR="/home/rnu/mnt/models/unsloth/phi3-finetuned-english-only-bf16"
 if [ ! -d "$OUTPUT_DIR" ]; then
     echo ""
     echo "[2/3] Creating output directory..."
@@ -64,8 +64,8 @@ echo "=================================================="
 echo "Training Configuration"
 echo "=================================================="
 echo "Model: Phi-3-Medium (14B parameters)"
-echo "Training data: scripts/datasets/merged_train.jsonl"
-echo "Validation data: scripts/datasets/merged_val.jsonl"
+echo "Training data: scripts/datasets/merged_train_english_only.jsonl (English-only, 366,749 sequences)"
+echo "Validation data: scripts/datasets/merged_val_english_only.jsonl (English-only, 40,755 sequences)"
 echo "Output directory: $OUTPUT_DIR"
 echo ""
 echo "Hyperparameters:"
@@ -109,8 +109,8 @@ echo ""
 echo "Starting training in background..."
 (PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 python "$TRAIN_SCRIPT" \
   --model_path /home/rnu/mnt/models/phi_models/phi3-medium/ \
-  --train_file "$SCRIPT_DIR/../scripts/datasets/merged_train.jsonl" \
-  --val_file "$SCRIPT_DIR/../scripts/datasets/merged_val.jsonl" \
+  --train_file "$SCRIPT_DIR/../scripts/datasets/merged_train_english_only.jsonl" \
+  --val_file "$SCRIPT_DIR/../scripts/datasets/merged_val_english_only.jsonl" \
   --output_dir "$OUTPUT_DIR" \
   --max_seq_length 1536 \
   --batch_size 1 \

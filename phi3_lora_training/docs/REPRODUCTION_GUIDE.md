@@ -44,9 +44,25 @@ pip show peft          # Must show 0.11.1
 ./prepare_dataset.sh
 ```
 
-### 5. Start Training
+### 5. Filter English-Only Sequences (Recommended)
+
+The dataset contains ~1.5% non-English sequences. Filter them out:
 
 ```bash
+cd ..
+python scripts/detect_non_english.py \
+    --train_file scripts/datasets/merged_train.jsonl \
+    --val_file scripts/datasets/merged_val.jsonl \
+    --filter \
+    --output_dir scripts/datasets
+```
+
+This creates English-only datasets that will be used for training.
+
+### 6. Start Training
+
+```bash
+cd phi3_lora_training
 ./start_training.sh
 ```
 
