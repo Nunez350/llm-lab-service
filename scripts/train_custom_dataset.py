@@ -19,7 +19,8 @@ from transformers import (
     TrainingArguments,
     Trainer,
     DataCollatorForLanguageModeling,
-    TrainerCallback
+    TrainerCallback,
+    EarlyStoppingCallback
 )
 from peft import LoraConfig, get_peft_model
 from datasets import Dataset
@@ -89,6 +90,8 @@ def parse_args():
                         help='Cache tokenized dataset to disk to avoid re-tokenization')
     parser.add_argument('--eval_steps', type=int, default=5000,
                         help='Number of steps between evaluations (default: 5000)')
+    parser.add_argument('--early_stopping_patience', type=int, default=None,
+                        help='Number of evaluations to wait before early stopping (default: None, disabled)')
 
     return parser.parse_args()
 
@@ -394,14 +397,25 @@ def main():
         pad_to_multiple_of=8  # Optimize for GPU tensor operations
     )
 
-    # Trainer with callback for gradient norms and sequence lengths
+    # Prepare callbacks
+    callbacks = [GradientNormCallback(max_seq_length=args.max_seq_length)]
+    
+    # Add early stopping if enabled and validation dataset exists
+    if args.early_stopping_patience is not None and val_dataset is not None:
+        callbacks.append(EarlyStoppingCallback(
+            early_stopping_patience=args.early_stopping_patience,
+            early_stopping_threshold=0.0  # Stop if no improvement at all
+        ))
+        print(f"✓ Early stopping enabled: patience={args.early_stopping_patience} evaluations")
+    
+    # Trainer with callbacks
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         data_collator=data_collator,
-        callbacks=[GradientNormCallback(max_seq_length=args.max_seq_length)],
+        callbacks=callbacks,
     )
 
     print("\n" + "="*60)

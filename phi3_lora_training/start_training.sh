@@ -90,6 +90,7 @@ echo "Expected training time: ~93 hours (3.9 days) with current config"
 echo "  - Alternative: max_seq_length=1024 saves ~39 hours (54h total, 42% faster)"
 echo "Checkpoints saved every 5000 steps"
 echo "Evaluation runs every 5000 steps"
+echo "Early stopping: Enabled (patience=3 evaluations = 15,000 steps)"
 echo "=================================================="
 echo ""
 echo "Press Enter to start training, or Ctrl+C to cancel..."
@@ -121,6 +122,7 @@ echo "Starting training in background..."
   --lora_alpha 16 \
   --gpu_id 0 \
   --eval_steps 5000 \
+  --early_stopping_patience 3 \
   > "$OUTPUT_DIR/training.log" 2>&1 &)
 
 # Get PID of training process
