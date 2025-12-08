@@ -88,6 +88,8 @@ def parse_args():
                         help='Optimizer type (default: adamw_torch_fused for full precision, adamw_8bit for 8-bit)')
     parser.add_argument('--cache_dataset', action='store_true',
                         help='Cache tokenized dataset to disk to avoid re-tokenization')
+    parser.add_argument('--save_steps', type=int, default=None,
+                        help='Number of steps between checkpoint saves (default: None, uses eval_steps)')
     parser.add_argument('--eval_steps', type=int, default=5000,
                         help='Number of steps between evaluations (default: 5000)')
     parser.add_argument('--early_stopping_patience', type=int, default=None,
@@ -354,6 +356,33 @@ def main():
             cache_file_name=os.path.join(cache_dir, "val_tokenized.arrow") if cache_dir else None
         )
 
+    # Determine save_steps - if load_best_model_at_end is enabled, save_steps must be a multiple of eval_steps
+    # Requirement: save_steps % eval_steps == 0 (save_steps must be >= eval_steps and divisible by it)
+    save_steps_value = args.save_steps if args.save_steps is not None else args.eval_steps
+    load_best_model = True if val_dataset else False
+    use_early_stopping = args.early_stopping_patience is not None and val_dataset is not None
+    
+    # If loading best model at end, ensure save_steps is a multiple of eval_steps
+    if load_best_model and args.save_steps is not None and args.eval_steps is not None:
+        # Requirement: save_steps must be a multiple of eval_steps (save_steps % eval_steps == 0)
+        if args.save_steps % args.eval_steps != 0:
+            # Not a valid multiple - round up to next multiple of eval_steps
+            eval_steps_val = args.eval_steps
+            requested_steps = args.save_steps
+            # Round up to next multiple
+            save_steps_value = ((requested_steps // eval_steps_val) + 1) * eval_steps_val
+            print(f"⚠️ Warning: save_steps ({args.save_steps}) is not a multiple of eval_steps ({args.eval_steps})")
+            print(f"   Adjusting save_steps to {save_steps_value} (next multiple of {eval_steps_val})")
+            print("   This ensures load_best_model_at_end and early stopping work correctly")
+        elif args.save_steps < args.eval_steps:
+            # save_steps is less than eval_steps - must be at least eval_steps
+            save_steps_value = args.eval_steps
+            print(f"⚠️ Warning: save_steps ({args.save_steps}) is less than eval_steps ({args.eval_steps})")
+            print(f"   Adjusting save_steps to {save_steps_value} to maintain compatibility")
+        else:
+            # save_steps >= eval_steps and save_steps % eval_steps == 0 - perfect!
+            save_steps_value = args.save_steps
+
     # Training arguments (optimized for RTX 5090)
     training_args = TrainingArguments(
         output_dir=args.output_dir,
@@ -368,7 +397,7 @@ def main():
         bf16=True,
         optim=args.optimizer,  # Use optimized optimizer (adamw_8bit is faster for quantized models)
         logging_steps=10,
-        save_steps=args.eval_steps,  # Must be a multiple of eval_steps for load_best_model_at_end
+        save_steps=save_steps_value,
         save_total_limit=3,
 
         # Dataloader optimizations (enable for faster data loading)
@@ -380,9 +409,9 @@ def main():
         eval_strategy="steps" if val_dataset else "no",
         eval_steps=args.eval_steps if val_dataset else None,
         eval_accumulation_steps=8 if val_dataset else None,
-        load_best_model_at_end=True if val_dataset else False,
-        metric_for_best_model="eval_loss" if val_dataset else None,
-        greater_is_better=False if val_dataset else None,
+        load_best_model_at_end=load_best_model,
+        metric_for_best_model="eval_loss" if val_dataset and load_best_model else None,
+        greater_is_better=False if val_dataset and load_best_model else None,
 
         # torch_compile is not compatible with quantized models + PEFT
         # Can be enabled for full precision models, but may cause issues
@@ -401,7 +430,7 @@ def main():
     callbacks = [GradientNormCallback(max_seq_length=args.max_seq_length)]
     
     # Add early stopping if enabled and validation dataset exists
-    if args.early_stopping_patience is not None and val_dataset is not None:
+    if use_early_stopping and load_best_model:
         callbacks.append(EarlyStoppingCallback(
             early_stopping_patience=args.early_stopping_patience,
             early_stopping_threshold=0.0  # Stop if no improvement at all
