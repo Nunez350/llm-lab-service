@@ -31,15 +31,34 @@ PIPER_MODEL_PATH = (
 PIPER_CONFIG_PATH = None  # If None, will auto-detect from model path
 
 # ---- HOTWORD ----
-USE_HOTWORD = False             # Start with False; set True when Porcupine is set
-USE_PORCUPINE = False           # True = use Porcupine; False = press Enter to wake
+USE_HOTWORD = True              # Enable hotword detection (Whisper or Porcupine)
+USE_PORCUPINE = False           # True = use Porcupine (requires access key); False = use Whisper-based detection
 
 # If you do use Porcupine:
-PORCUPINE_ACCESS_KEY = ""       # put your Picovoice AccessKey here
+PORCUPINE_ACCESS_KEY = ""       # put your Picovoice AccessKey here (get from https://console.picovoice.ai/)
 PORCUPINE_KEYWORD = "jarvis"    # built-in jarvis keyword in pvporcupine
 
 # ---- MEMORY ----
 MAX_MEMORY_TURNS = 30
+
+# ---- LLM (API) ----
+LLM_ENABLED = True
+LLM_API_URL = "http://localhost:9020/v1/chat/completions"  # OpenAI-compatible API endpoint
+LLM_MODEL_NAME = "phi3-mini"  # Model name as registered in the API server
+LLM_MAX_NEW_TOKENS = 256
+LLM_TEMPERATURE = 0.4
+# How many past turns to include in the prompt
+LLM_CONTEXT_TURNS = 10
+# High-level system prompt / personality
+LLM_SYSTEM_PROMPT = """You are Jarvis, a helpful, efficient voice assistant running locally on the user's workstation.
+
+- You speak concisely and clearly.
+
+- You can reference earlier parts of this conversation when helpful.
+
+- You only describe actions; the actual system control is done by other services.
+
+If you are not sure about something, ask a brief clarifying question."""
 
 # ---- MISC ----
 TTS_WAV_PATH = "jarvis_tts.wav"

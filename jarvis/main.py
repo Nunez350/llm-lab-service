@@ -1,8 +1,9 @@
 # jarvis/main.py
 
+import time
 import numpy as np
 
-from .config import RECORD_DURATION_SEC, DEBUG, MAX_MEMORY_TURNS
+from .config import RECORD_DURATION_SEC, DEBUG, MAX_MEMORY_TURNS, USE_HOTWORD
 from .audio_io import AudioRecorder
 from .stt_whisper import STTEngine
 from .tts_piper import TTSEngine
@@ -16,7 +17,8 @@ def main():
 
     # Init subsystems
     try:
-        recorder = AudioRecorder()
+        # Prefer subprocess recording when using hotword detection to avoid ALSA conflicts
+        recorder = AudioRecorder(prefer_subprocess=USE_HOTWORD)
         stt = STTEngine()
         tts = TTSEngine()
         hotword = create_hotword_detector()
@@ -118,5 +120,4 @@ def main():
 
 if __name__ == "__main__":
     import sys
-    import time
     sys.exit(main())
