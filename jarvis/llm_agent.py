@@ -114,3 +114,4 @@ class LocalLLMAgent:
             raise RuntimeError(f"LLM API error ({e.code}): {error_body}")
         except Exception as e:
             raise RuntimeError(f"Failed to call LLM API: {e}")
+
