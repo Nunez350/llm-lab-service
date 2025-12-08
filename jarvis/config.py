@@ -38,6 +38,9 @@ USE_PORCUPINE = False           # True = use Porcupine; False = press Enter to w
 PORCUPINE_ACCESS_KEY = ""       # put your Picovoice AccessKey here
 PORCUPINE_KEYWORD = "jarvis"    # built-in jarvis keyword in pvporcupine
 
+# ---- MEMORY ----
+MAX_MEMORY_TURNS = 30
+
 # ---- MISC ----
 TTS_WAV_PATH = "jarvis_tts.wav"
 TEMP_RECORDING_PATH = "jarvis_temp.wav"

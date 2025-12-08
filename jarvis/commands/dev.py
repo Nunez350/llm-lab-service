@@ -3,8 +3,10 @@
 import subprocess
 from typing import Tuple
 
+from ..memory import ConversationMemory
 
-def try_handle(text: str) -> Tuple[bool, str]:
+
+def try_handle(text: str, memory: ConversationMemory) -> Tuple[bool, str]:
     if "run tests" in text:
         # Example: run pytest
         try:
@@ -14,15 +16,28 @@ def try_handle(text: str) -> Tuple[bool, str]:
             return True, "Pytest not found. Make sure it is installed."
 
     if "git status" in text:
-        # You might want to parse and summarize instead of printing raw
         try:
-            result = subprocess.run(["git", "status", "-sb"], capture_output=True, text=True, timeout=5)
-            status_summary = result.stdout[:200].strip()
-            return True, f"Here is the git status: {status_summary}"
+            result = subprocess.run(
+                ["git", "status", "-sb"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            summary = result.stdout.strip().splitlines()[0] if result.stdout else "No status."
+            # Remember last git status
+            memory.remember_fact("last_git_status", summary)
+            return True, f"Git status: {summary}"
         except subprocess.TimeoutExpired:
             return True, "Git status command timed out."
         except Exception as e:
             return True, f"Error getting git status: {str(e)[:50]}"
+
+    if "what was the last git status" in text:
+        last = memory.get_fact("last_git_status")
+        if last:
+            return True, f"The last git status I saw was: {last}"
+        else:
+            return True, "I don't have any git status stored yet."
 
     if "git log" in text:
         try:

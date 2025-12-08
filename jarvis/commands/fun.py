@@ -3,8 +3,10 @@
 from typing import Tuple
 import random
 
+from ..memory import ConversationMemory
 
-def try_handle(text: str) -> Tuple[bool, str]:
+
+def try_handle(text: str, memory: ConversationMemory) -> Tuple[bool, str]:
     if "tell me a joke" in text or "joke" in text:
         jokes = [
             "Why do programmers prefer dark mode? Because light attracts bugs.",
@@ -16,13 +18,11 @@ def try_handle(text: str) -> Tuple[bool, str]:
         return True, random.choice(jokes)
 
     if "how are you" in text:
-        responses = [
-            "I am operating within expected parameters.",
-            "All systems nominal.",
-            "I am functioning correctly.",
-            "Everything is working as designed.",
-        ]
-        return True, random.choice(responses)
+        # Use memory just for flavor
+        times = len(memory.history)
+        if times > 4:
+            return True, f"I am doing well. We have already spoken for {times} messages."
+        return True, "I am operating within expected parameters."
 
     if "hello" in text or "hi" in text:
         return True, "Hello! How can I help you?"

@@ -2,14 +2,15 @@
 
 from typing import Optional, Tuple
 
+from ..memory import ConversationMemory
 from . import system, dev, fun
 
 
-def handle_command(text: str) -> Tuple[str, Optional[str]]:
+def handle_command(text: str, memory: ConversationMemory) -> Tuple[str, Optional[str]]:
     """
     Dispatch command text to appropriate handler.
     Returns:
-        (response_to_speak, debug_info_or_None)
+        (response_to_speak, debug_module_name_or_None)
     """
     t = text.lower().strip()
     if not t:
@@ -17,7 +18,7 @@ def handle_command(text: str) -> Tuple[str, Optional[str]]:
 
     # Order matters; system-level commands checked first
     for module in (system, dev, fun):
-        handled, reply = module.try_handle(t)
+        handled, reply = module.try_handle(t, memory)
         if handled:
             return (reply, module.__name__)
 
