@@ -1,0 +1,45 @@
+
+● Interesting - the eval metrics aren't appearing as explicit lines. Looking at the output, I can see the first eval happened at step 1000 (note the dramatic time jump at step 1001 showing
+   1240.54s/it - that's the evaluation time being factored in). Let me check for the saved checkpoints and trainer state to get the eval loss:
+
+● Bash(ls -la /home/rnu/mnt/models/unsloth/phi3-finetuned-english-only-v2/ 2>/dev/null | head -20 && echo "" && cat /home/rnu/mnt/models/unsloth/phi3-finetuned-english…)
+  ⎿  total 2308
+     drwxrwxr-x  5 rnu rnu    4096 Dec 10 05:38 .
+     drwxrwxr-x 13 rnu rnu    4096 Dec  9 10:22 ..
+     … +105 lines (ctrl+o to expand)
+
+● Found it! The first evaluation results from the trainer_state.json:
+
+  First Eval (Step 1000):
+  - eval_loss: 0.8263 (best_metric)
+  - Checkpoint: checkpoint-1000 saved as best model
+
+  The trainer is tracking evaluations and has already run 3 evaluations:
+  - checkpoint-1000 (step 1000) - eval_loss: 0.8263 ← best so far
+  - checkpoint-2000 (step 2000)
+  - checkpoint-3000 (step 3000)
+
+  Let me get the eval losses for all checkpoints:
+
+● Bash(for ckpt in /home/rnu/mnt/models/unsloth/phi3-finetuned-english-only-v2/checkpoint-*/trainer_state.json; do
+        echo "=== $(dirname $ckpt | xargs basename) ==="…)
+  ⎿  === checkpoint-1000 ===
+     eval_loss: 0.826290488243103
+     === checkpoint-2000 ===
+     … +3 lines (ctrl+o to expand)
+
+● Evaluation Results Summary:
+
+  | Step | Eval Loss | Trend      |
+  |------|-----------|------------|
+  | 1000 | 0.8263    | baseline   |
+  | 2000 | 0.8052    | ↓ improved |
+  | 3000 | 0.7956    | ↓ improved |
+
+  The model is learning well - validation loss is consistently decreasing:
+  - 1000 → 2000: -2.5% improvement
+  - 2000 → 3000: -1.2% improvement
+
+  The downward trend indicates good generalization with no signs of overfitting yet. The current best checkpoint is checkpoint-3000 with eval_loss of 0.7956.
+
+──────────────

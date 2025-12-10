@@ -82,10 +82,11 @@ def main():
         # Multi-GPU DDP: set CUDA device first, then load without device_map
         # DDP will handle device placement
         torch.cuda.set_device(local_rank)
+        torch.distributed.init_process_group(backend="nccl")
         device_map = None  # Let DDP handle device placement
     else:
-        # Single GPU: use auto device_map
-        device_map = "auto"
+        # Single GPU: use explicit device to avoid spreading across GPUs
+        device_map = {"": 0}
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,
@@ -95,15 +96,9 @@ def main():
         attn_implementation="eager",    # Phi-3 requirement
     )
 
-    # Prepare model for k-bit training
-    # Note: prepare_model_for_kbit_training is still used here for 4-bit quantization.
-    # In newer QLoRA recipes it's optional; if it causes issues, you can safely remove this line.
-    # model = prepare_model_for_kbit_training(model)
-
-    # NO gradient checkpointing - allows torch.compile() to work
-    # 4-bit quantization saves enough memory that we don't need it
-    # print("Enabling gradient checkpointing...")
-    # model.gradient_checkpointing_enable()
+    # Prepare model for k-bit training - this enables gradients for quantized models
+    # and is required for gradient checkpointing with 4-bit quantization
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
 
     # LoRA config - 2025 canonical list for Phi-3 (includes gate_up_proj for better coverage)
     lora_config = LoraConfig(
@@ -168,7 +163,7 @@ def main():
         weight_decay=0.01,
 
         bf16=True,
-        gradient_checkpointing=False,           # Disabled for torch.compile() compatibility
+        gradient_checkpointing=True,            # Enabled to save memory
         optim="adamw_torch",                    # Standard optimizer (8-bit optimizers have compatibility issues with accelerate in 4.45.0)
                                                 # adamw_torch is stable and works well with 4-bit QLoRA
         logging_steps=10,
@@ -188,10 +183,6 @@ def main():
         dataloader_pin_memory=True,            # Faster GPU transfer
         dataloader_prefetch_factor=4,         # Reduced from 4 to save memory
         torch_compile=False,                    # Using manual torch.compile() above instead
-
-        # DDP settings for quantized models
-        ddp_find_unused_parameters=False,       # Required for quantized models
-        ddp_backend="nccl",                     # Use NCCL backend for multi-GPU
 
         report_to="none",
         disable_tqdm=False,

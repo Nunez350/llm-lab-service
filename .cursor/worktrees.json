@@ -1,0 +1,5 @@
+{
+  "setup-worktree": [
+    "source labvenv/bin/activate || source ../labvenv/bin/activate"
+  ]
+}

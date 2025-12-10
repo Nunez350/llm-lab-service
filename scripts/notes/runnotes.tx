@@ -1,0 +1,41 @@
+ PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 nohup python scripts/train_custom_dataset.py \
+    --model_path /home/rnu/mnt/models/phi_models/phi3-medium/ \
+    --train_file scripts/datasets/merged_train_english_only_short.jsonl \
+    --val_file scripts/datasets/merged_val_english_only_short.jsonl \
+    --output_dir /home/rnu/mnt/models/unsloth/phi3-finetuned-english-only-v2 \
+    --max_seq_length 1024 \
+    --batch_size 2 \
+    --gradient_accumulation_steps 9 \
+    --num_epochs 3 \
+    --learning_rate 2e-4 \
+    --lora_r 64 \
+    --lora_alpha 16 \
+    --save_steps 1000 \
+    --eval_steps 1000 \
+    > /home/rnu/mnt/models/unsloth/phi3-finetuned-english-only-v2/training.log 2>&1 &
+
+  Key configuration:
+  - Script: train_custom_dataset.py (full bf16, faster than 4-bit QLoRA)
+  - Model: Phi-3 Medium
+  - Sequence length: 1024
+  - Effective batch size: 18 (batch_size=2 × grad_accum=9)
+  - Epochs: 3
+  - Checkpoints/Eval: Every 1000 steps
+  - Estimated time: ~84 hours
+
+  Let me check the current training status:
+
+● Bash(pgrep -f "train_custom_dataset.py" && tail -30 /home/rnu/mnt/models/unsloth/phi3-finetuned-english-only-v2/training.log 2>/dev/null || echo "Training process no…)
+  ⎿  962197
+     962199
+     963781
+     … +38 lines (ctrl+o to expand)
+
+● Training is running well:
+
+  Current Status:
+  - Progress: 6% complete (3,690 / 59,316 steps)
+  - Time elapsed: ~8 hours 50 minutes
+  - Speed: ~5.5-6s per iteration
+  - Loss: ~0.82 (stable, good convergence)
+  - Epoch: 0.19 (19% through epoch 1)
