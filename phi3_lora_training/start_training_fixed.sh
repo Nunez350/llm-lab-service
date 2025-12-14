@@ -51,7 +51,7 @@ fi
 
 echo ""
 echo "Training Configuration"
-echo "Seq length:      1026"
+echo "Seq length:      1024"
 echo "Batch size:      1"
 echo "Grad accum:      9"
 echo "Effective batch: 18"
