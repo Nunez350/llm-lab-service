@@ -5,9 +5,7 @@
 
 set -e
 
-echo "=================================================="
 echo "Starting Phi-3 Medium Training (Memory Optimized)"
-echo "=================================================="
 echo ""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,11 +50,9 @@ if [ "$EXISTING_PROCESSES" -gt 0 ]; then
 fi
 
 echo ""
-echo "=================================================="
 echo "Training Configuration"
-echo "=================================================="
-echo "Seq length:      1536"
-echo "Batch size:      2"
+echo "Seq length:      1026"
+echo "Batch size:      1"
 echo "Grad accum:      9"
 echo "Effective batch: 18"
 echo "Learning rate:   2e-4"
@@ -66,7 +62,6 @@ echo ""
 echo "MULTI_GPU:       $MULTI_GPU"
 echo "NUM_GPUS:        $NUM_GPUS"
 echo "Output:          $OUTPUT_DIR"
-echo "=================================================="
 echo ""
 
 TRAIN_SCRIPT="$SCRIPT_DIR/../scripts/train_working.py"
@@ -114,8 +109,6 @@ echo "Starting training..."
     --train_file "$TRAIN_FILE" \
     --val_file "$VAL_FILE" \
     --output_dir "$OUTPUT_DIR" \
-    --max_seq_length 1024 \
-    --batch_size 2 \
     --gradient_accumulation_steps 9 \
     --num_epochs 3 \
     --learning_rate 2e-4 \
@@ -146,7 +139,6 @@ if [ -z "$TRAIN_PID" ]; then
 fi
 
 echo ""
-echo "=================================================="
 echo "✓ Training started successfully!"
 echo "PID: $TRAIN_PID"
 echo "Log: $OUTPUT_DIR/training.log"
@@ -159,5 +151,4 @@ echo "  nvidia-smi"
 echo ""
 echo "Kill:"
 echo "  kill $TRAIN_PID"
-echo "=================================================="
 
