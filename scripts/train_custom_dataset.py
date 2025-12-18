@@ -94,6 +94,8 @@ def parse_args():
                         help='Number of steps between evaluations (default: 5000)')
     parser.add_argument('--early_stopping_patience', type=int, default=None,
                         help='Number of evaluations to wait before early stopping (default: None, disabled)')
+    parser.add_argument('--resume_from_checkpoint', type=str, default=None,
+                        help='Path to checkpoint to resume from, or "auto" to resume from latest checkpoint in output_dir')
 
     return parser.parse_args()
 
@@ -451,7 +453,25 @@ def main():
     print("Starting training...")
     print("="*60)
 
-    trainer.train()
+    # Handle checkpoint resumption
+    resume_checkpoint = None
+    if args.resume_from_checkpoint:
+        if args.resume_from_checkpoint == "auto":
+            # Find latest checkpoint in output_dir
+            import glob
+            checkpoints = glob.glob(os.path.join(args.output_dir, "checkpoint-*"))
+            if checkpoints:
+                # Sort by step number
+                checkpoints.sort(key=lambda x: int(x.split("-")[-1]))
+                resume_checkpoint = checkpoints[-1]
+                print(f"Auto-resuming from latest checkpoint: {resume_checkpoint}")
+            else:
+                print("No checkpoints found in output_dir, starting fresh")
+        else:
+            resume_checkpoint = args.resume_from_checkpoint
+            print(f"Resuming from checkpoint: {resume_checkpoint}")
+
+    trainer.train(resume_from_checkpoint=resume_checkpoint)
 
     print("\n" + "="*60)
     print("Saving model...")

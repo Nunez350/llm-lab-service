@@ -321,5 +321,12 @@ export CUDA_VISIBLE_DEVICES=0
 
 ---
 
+## Related Documentation
+
+- **Evaluation Process:** See `EVALUATION_PROCESS.md` for detailed evaluation setup and dataset information
+- **Training Setup:** See `README_TRAINING_SETUP.md` for initial setup instructions
+
+---
+
 **Last Updated:** December 9, 2025
 

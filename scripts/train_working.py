@@ -82,11 +82,10 @@ def main():
         # Multi-GPU DDP: set CUDA device first, then load without device_map
         # DDP will handle device placement
         torch.cuda.set_device(local_rank)
-        torch.distributed.init_process_group(backend="nccl")
         device_map = None  # Let DDP handle device placement
     else:
-        # Single GPU: use explicit device to avoid spreading across GPUs
-        device_map = {"": 0}
+        # Single GPU: use auto device_map
+        device_map = "auto"
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model_path,
@@ -96,9 +95,15 @@ def main():
         attn_implementation="eager",    # Phi-3 requirement
     )
 
-    # Prepare model for k-bit training - this enables gradients for quantized models
-    # and is required for gradient checkpointing with 4-bit quantization
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    # Prepare model for k-bit training
+    # Note: prepare_model_for_kbit_training is still used here for 4-bit quantization.
+    # In newer QLoRA recipes it's optional; if it causes issues, you can safely remove this line.
+    # model = prepare_model_for_kbit_training(model)
+
+    # NO gradient checkpointing - allows torch.compile() to work
+    # 4-bit quantization saves enough memory that we don't need it
+    # print("Enabling gradient checkpointing...")
+    # model.gradient_checkpointing_enable()
 
     # LoRA config - 2025 canonical list for Phi-3 (includes gate_up_proj for better coverage)
     lora_config = LoraConfig(
@@ -155,7 +160,7 @@ def main():
         output_dir=args.output_dir,
         num_train_epochs=args.num_epochs,
         per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=2,           # Reduced for safety during eval (prevents OOM)
+        per_device_eval_batch_size=1,           # Reduced to 1 for safety during eval (prevents OOM)
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         learning_rate=args.learning_rate,
         lr_scheduler_type="cosine",
@@ -163,26 +168,29 @@ def main():
         weight_decay=0.01,
 
         bf16=True,
-        gradient_checkpointing=True,            # Enabled to save memory
+        gradient_checkpointing=True,            # Enable to save memory (needed for single GPU with batch_size=2)
         optim="adamw_torch",                    # Standard optimizer (8-bit optimizers have compatibility issues with accelerate in 4.45.0)
                                                 # adamw_torch is stable and works well with 4-bit QLoRA
         logging_steps=10,
-        save_steps=5000,                       # Less frequent checkpoints for speed
+        save_steps=1000,                       # Save checkpoint every 1000 steps (matches eval frequency)
         save_total_limit=3,
 
         # Validation – smart & low overhead (only if val_file provided)
         eval_strategy="steps" if val_dataset is not None else "no",  # Updated from evaluation_strategy (deprecated in 4.46+)
-        eval_steps=5000 if val_dataset is not None else None,  # Less frequent validation for speed
+        eval_steps=1000 if val_dataset is not None else None,  # Evaluation every 1000 steps
         eval_accumulation_steps=16 if val_dataset is not None else None,  # Increased to prevent OOM during eval (processes in smaller chunks)
         load_best_model_at_end=True if val_dataset is not None else False,
         metric_for_best_model="eval_loss" if val_dataset is not None else None,
         greater_is_better=False if val_dataset is not None else None,
 
-        # Speed flags (reduced for memory efficiency with VLLM on GPU 1)
-        dataloader_num_workers=12,             # Reduced from 12 to save memory
+        # Speed flags (reduced for memory efficiency)
+        dataloader_num_workers=4,              # Reduced to 4 to save memory
         dataloader_pin_memory=True,            # Faster GPU transfer
-        dataloader_prefetch_factor=4,         # Reduced from 4 to save memory
+        dataloader_prefetch_factor=2,         # Reduced to 2 to save memory
         torch_compile=False,                    # Using manual torch.compile() above instead
+
+        # DDP settings for quantized models (only set in multi-GPU mode)
+        # In single GPU mode, these should not be set at all
 
         report_to="none",
         disable_tqdm=False,
@@ -192,7 +200,7 @@ def main():
     callbacks = []
     if val_dataset is not None:
         callbacks.append(EarlyStoppingCallback(
-            early_stopping_patience=1,   # Stop if next eval doesn't improve loss (since eval every 5000 steps)
+            early_stopping_patience=1,   # Stop if next eval doesn't improve loss (since eval every 1000 steps)
             early_stopping_threshold=0.0  # Any improvement counts
         ))
 

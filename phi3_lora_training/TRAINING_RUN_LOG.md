@@ -4,10 +4,10 @@
 
 ### Actual Command Used
 
-This is the exact command that was executed to start training on December 9, 2025:
+This is the exact command that was executed to start training:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 nohup python scripts/train_custom_dataset.py \
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True CUDA_VISIBLE_DEVICES=0 nohup python scripts/train_custom_dataset.py \
     --model_path /home/rnu/mnt/models/phi_models/phi3-medium/ \
     --train_file scripts/datasets/merged_train_english_only_short.jsonl \
     --val_file scripts/datasets/merged_val_english_only_short.jsonl \
@@ -23,7 +23,7 @@ CUDA_VISIBLE_DEVICES=0 nohup python scripts/train_custom_dataset.py \
     --eval_steps 1000 \
     --early_stopping_patience 3 \
     --resume_from_checkpoint auto \
-    > training_resume.log 2>&1 &
+    > /home/rnu/mnt/models/unsloth/phi3-finetuned-english-only-v2/training_early_stop.log 2>&1 &
 ```
 
 ### Configuration Summary
@@ -45,7 +45,8 @@ CUDA_VISIBLE_DEVICES=0 nohup python scripts/train_custom_dataset.py \
 - **Early Stopping Patience**: 3 evaluations
 - **Resume**: Auto (resumes from latest checkpoint if available)
 - **Output Directory**: `/home/rnu/mnt/models/unsloth/phi3-finetuned-english-only-v2`
-- **Log File**: `training_resume.log`
+- **Log File**: `/home/rnu/mnt/models/unsloth/phi3-finetuned-english-only-v2/training_early_stop.log`
+- **Memory Optimization**: `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (reduces memory fragmentation)
 
 ### Dataset Details
 
@@ -69,8 +70,9 @@ CUDA_VISIBLE_DEVICES=0 nohup python scripts/train_custom_dataset.py \
 ### Notes
 
 - Training was started with `nohup` to run in background
-- Logs are written to `training_resume.log`
+- Logs are written to `/home/rnu/mnt/models/unsloth/phi3-finetuned-english-only-v2/training_early_stop.log`
 - Uses `train_custom_dataset.py` script (not `train_working.py`)
 - Batch size is 2 (not 1 as in some other configurations)
 - Auto-resume enabled to continue from checkpoints if training is interrupted
+- `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` set to reduce CUDA memory fragmentation issues
 

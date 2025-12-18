@@ -60,25 +60,26 @@ def load_jsonl(file_path, num_samples=None):
     return data
 
 
-def load_model_and_tokenizer(model_path, base_model_path, is_adapter=True):
-    """Load model and tokenizer"""
+def load_model_and_tokenizer(model_path, base_model_path, is_adapter=True, gpu_id=0):
+    """Load model and tokenizer on specific GPU"""
     print(f"\nLoading tokenizer from {base_model_path}...")
-    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
+    tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    print(f"Loading base model from {base_model_path}...")
+    print(f"Loading base model from {base_model_path} on GPU {gpu_id}...")
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
         torch_dtype=torch.bfloat16,
-        device_map="auto",
-        trust_remote_code=True
+        device_map={"": gpu_id},  # Force to specific GPU
+        trust_remote_code=True,
+        attn_implementation="eager"  # Required for Phi-3
     )
 
     if is_adapter:
         print(f"Loading LoRA adapter from {model_path}...")
         model = PeftModel.from_pretrained(base_model, model_path)
-        model = model.merge_and_unload()
+        # Don't merge - keep adapter for potential toggle
     else:
         model = base_model
 
@@ -196,7 +197,7 @@ def generate_samples(model, tokenizer, examples, max_new_tokens=256, num_samples
 
 
 def compare_models(base_model, finetuned_model, tokenizer, examples, num_samples=20):
-    """A/B comparison between base and fine-tuned models"""
+    """A/B comparison between base and fine-tuned models (on different GPUs)"""
     print("\n" + "="*60)
     print("A/B MODEL COMPARISON")
     print("="*60)
@@ -220,12 +221,12 @@ def compare_models(base_model, finetuned_model, tokenizer, examples, num_samples
             tokenize=False,
             add_generation_prompt=True
         )
-        inputs = tokenizer(text, return_tensors="pt").to(base_model.device)
 
-        # Generate from base model
+        # Generate from base model (on its device)
+        base_inputs = tokenizer(text, return_tensors="pt").to(base_model.device)
         with torch.no_grad():
             base_outputs = base_model.generate(
-                **inputs,
+                **base_inputs,
                 max_new_tokens=256,
                 do_sample=True,
                 temperature=0.7,
@@ -233,14 +234,15 @@ def compare_models(base_model, finetuned_model, tokenizer, examples, num_samples
                 pad_token_id=tokenizer.eos_token_id
             )
             base_response = tokenizer.decode(
-                base_outputs[0][inputs["input_ids"].shape[1]:],
+                base_outputs[0][base_inputs["input_ids"].shape[1]:],
                 skip_special_tokens=True
             )
 
-        # Generate from fine-tuned model
+        # Generate from fine-tuned model (on its device)
+        ft_inputs = tokenizer(text, return_tensors="pt").to(finetuned_model.device)
         with torch.no_grad():
             ft_outputs = finetuned_model.generate(
-                **inputs,
+                **ft_inputs,
                 max_new_tokens=256,
                 do_sample=True,
                 temperature=0.7,
@@ -248,7 +250,7 @@ def compare_models(base_model, finetuned_model, tokenizer, examples, num_samples
                 pad_token_id=tokenizer.eos_token_id
             )
             ft_response = tokenizer.decode(
-                ft_outputs[0][inputs["input_ids"].shape[1]:],
+                ft_outputs[0][ft_inputs["input_ids"].shape[1]:],
                 skip_special_tokens=True
             )
 
@@ -285,6 +287,10 @@ def save_results(output_dir, perplexity_results, sample_generations, ab_comparis
         json.dump(ab_comparisons, f, indent=2)
 
     # Create summary report
+    ft_ppl = perplexity_results.get('finetuned', perplexity_results)
+    base_ppl = perplexity_results.get('base', {})
+    improvement = perplexity_results.get('improvement_percent', 0)
+
     summary = f"""
 # Evaluation Summary
 **Timestamp:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -293,10 +299,14 @@ def save_results(output_dir, perplexity_results, sample_generations, ab_comparis
 - **Fine-tuned Model:** {model_info['finetuned_path']}
 - **Base Model:** {model_info['base_path']}
 
-## Perplexity Results
-- **Perplexity:** {perplexity_results['perplexity']:.4f}
-- **Average Loss:** {perplexity_results['average_loss']:.4f}
-- **Total Tokens Evaluated:** {perplexity_results['total_tokens']:,}
+## Perplexity Comparison
+
+| Model | Loss | Perplexity | Tokens |
+|-------|------|------------|--------|
+| Fine-tuned | {ft_ppl.get('average_loss', 0):.4f} | {ft_ppl.get('perplexity', 0):.4f} | {ft_ppl.get('total_tokens', 0):,} |
+| Base | {base_ppl.get('average_loss', 0):.4f} | {base_ppl.get('perplexity', 0):.4f} | {base_ppl.get('total_tokens', 0):,} |
+
+**Improvement:** {improvement:.1f}% lower perplexity
 
 ## Sample Generations
 - Generated {len(sample_generations)} sample responses
@@ -326,42 +336,67 @@ def save_results(output_dir, perplexity_results, sample_generations, ab_comparis
 def main():
     args = parse_args()
 
-    # Set GPU
-    import os
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
+    # Both GPUs will be used - GPU 0 for fine-tuned, GPU 1 for base
+    # Don't restrict CUDA_VISIBLE_DEVICES - we need both GPUs
 
     print("="*60)
-    print("LLM EVALUATION FRAMEWORK")
+    print("LLM EVALUATION FRAMEWORK (Two-GPU Mode)")
     print("="*60)
+    print("GPU 0: Fine-tuned model")
+    print("GPU 1: Base model")
 
     # Load validation data
     print(f"\nLoading validation data from {args.val_file}...")
     val_data = load_jsonl(args.val_file, args.num_samples)
     print(f"Loaded {len(val_data)} examples")
 
-    # Load fine-tuned model
+    # Load fine-tuned model on GPU 0
     finetuned_model, tokenizer = load_model_and_tokenizer(
         args.model_path,
         args.base_model_path,
-        is_adapter=True
+        is_adapter=True,
+        gpu_id=0
     )
 
-    # Load base model for comparison
-    print(f"\nLoading base model for comparison...")
+    # Load base model on GPU 1
+    print(f"\nLoading base model for comparison on GPU 1...")
     base_model, _ = load_model_and_tokenizer(
         args.base_model_path,
         args.base_model_path,
-        is_adapter=False
+        is_adapter=False,
+        gpu_id=1
     )
 
-    # 1. Calculate perplexity
-    perplexity_results = calculate_perplexity(
+    # 1. Calculate perplexity for fine-tuned model
+    print("\n" + "="*60)
+    print("FINE-TUNED MODEL PERPLEXITY")
+    print("="*60)
+    finetuned_perplexity = calculate_perplexity(
         finetuned_model,
         tokenizer,
         val_data
     )
 
-    # 2. Generate sample responses
+    # 2. Calculate perplexity for base model
+    print("\n" + "="*60)
+    print("BASE MODEL PERPLEXITY")
+    print("="*60)
+    base_perplexity = calculate_perplexity(
+        base_model,
+        tokenizer,
+        val_data
+    )
+
+    # Print comparison
+    print("\n" + "="*60)
+    print("PERPLEXITY COMPARISON")
+    print("="*60)
+    print(f"Fine-tuned: Loss={finetuned_perplexity['average_loss']:.4f}, PPL={finetuned_perplexity['perplexity']:.4f}")
+    print(f"Base model: Loss={base_perplexity['average_loss']:.4f}, PPL={base_perplexity['perplexity']:.4f}")
+    improvement = ((base_perplexity['perplexity'] - finetuned_perplexity['perplexity']) / base_perplexity['perplexity']) * 100
+    print(f"Improvement: {improvement:.1f}% lower perplexity")
+
+    # 3. Generate sample responses
     sample_generations = generate_samples(
         finetuned_model,
         tokenizer,
@@ -370,7 +405,7 @@ def main():
         num_samples=min(20, len(val_data))
     )
 
-    # 3. A/B comparison
+    # 4. A/B comparison
     ab_comparisons = compare_models(
         base_model,
         finetuned_model,
@@ -378,6 +413,13 @@ def main():
         val_data,
         num_samples=min(20, len(val_data))
     )
+
+    # Combine perplexity results
+    perplexity_results = {
+        "finetuned": finetuned_perplexity,
+        "base": base_perplexity,
+        "improvement_percent": improvement
+    }
 
     # Save all results
     model_info = {
